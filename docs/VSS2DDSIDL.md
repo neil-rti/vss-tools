@@ -96,6 +96,6 @@ See [https://www.rti.com/free-trial/drive](https://www.rti.com/free-trial/drive)
 
 **Usage of Connext Drive to take IDL file as input and generate typesupport source files**
 
-> rtiddsgen -ppDisable -language <lang> -create typefiles
+> rtiddsgen -ppDisable -language LANG -create typefiles
 
-where <lang> is one of: C, C++, C++11, C#, Java, or other programming languages.
+where LANG is one of: `C`, `C++`, `C++11`, `C#`, `Java`, or other programming languages.
