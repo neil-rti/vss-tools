@@ -63,7 +63,7 @@ def main(arguments):
     parser.add_argument('--abort-on-name-style', action='store_true',
                         help=" Terminate naming style not follows recommendations.")
     parser.add_argument('--format', metavar='format', type=Exporter.from_string, choices=list(Exporter),
-                        help='Output format, choose one from '+str(Exporter._member_names_)+". If omitted we try to guess form output_file suffix.")
+                        help='Output format, choose one from '+str(Exporter._member_names_)+". If omitted we try to guess from output_file suffix.")
     parser.add_argument('--uuid', action='store_true',
                         help='Include uuid in generated files. This is currently the default behavior.')
     parser.add_argument('--no-uuid', action='store_true',
