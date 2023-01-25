@@ -75,7 +75,9 @@ $ cd cyclonedds/ \
 
 **Usage of CycloneDDS to take IDL file as input and generate Python file with types**
 
-> idlc **-l py**  ./results/res.idl
+ ```Shell
+$ idlc **-l py**  ./results/res.idl
+```
 
 ### FastDDS
 
@@ -85,9 +87,11 @@ Follow the instructions mentioned in page : [https://fast-dds.docs.eprosima.com/
 
 **Usage of FastDDS to take IDL file as input and generate Python file with types**
 
-> ./fastddsgen **-replace** ./results/res.idl
+```Shell
+$ ./fastddsgen **-replace** ./results/res.idl
+```
 
-### RTI Connext
+### RTI Connext Drive
 
 **Installation**
 
@@ -96,6 +100,8 @@ See [https://www.rti.com/free-trial/drive](https://www.rti.com/free-trial/drive)
 
 **Usage of Connext Drive to take IDL file as input and generate typesupport source files**
 
-> rtiddsgen -ppDisable -language LANG -create typefiles
+```Shell
+$ rtiddsgen -ppDisable -language LANG -create typefiles
+```
 
 where LANG is one of: `C`, `C++`, `C++11`, `C#`, `Java`, or other programming languages.
