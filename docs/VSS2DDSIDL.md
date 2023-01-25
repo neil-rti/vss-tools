@@ -54,10 +54,13 @@ Below elements are considered only if the switch ***--all-idl-features*** is sup
 
 ## Checking generated DDS-IDL file and generating code stubs from it
 
-IDL files can be supplied as input to one of the DDS impementation (e.g: CycloeDDS, FastDDS) and the data can be validated, and also stubs (python/c++/java code) can be generated from the contents in the IDL file.
+IDL files can be supplied as input to one of the DDS implementations (e.g: CycloneDDS, FastDDS, RTI Connext Drive)
+and the data can be validated, and also stubs (python/c++/c/java code) can be generated from the contents in the IDL file.
 
-### Installation of CycloneDDS
+## DDS Installation and Use
 
+### CycloneDDS
+**Installation**
 
 ```Shell
 $ git clone https://github.com/eclipse-cyclonedds/cyclonedds.git
@@ -73,12 +76,26 @@ $ cd cyclonedds/ \
 **Usage of CycloneDDS to take IDL file as input and generate Python file with types**
 
 > idlc **-l py**  ./results/res.idl
+
 ### FastDDS
 
-**Installation of FastDDS**
+**Installation**
 
 Follow the instructions mentioned in page : [https://fast-dds.docs.eprosima.com/en/latest/installation/binaries/binaries_linux.html](https://fast-dds.docs.eprosima.com/en/latest/installation/binaries/binaries_linux.html)
 
 **Usage of FastDDS to take IDL file as input and generate Python file with types**
 
 > ./fastddsgen **-replace** ./results/res.idl
+
+### RTI Connext
+
+**Installation**
+
+Installation instructions for RTI Connext Drive can be found in the respective package install bundles for Linux, Windows, and MacOS.
+See [https://www.rti.com/free-trial/drive](https://www.rti.com/free-trial/drive) 
+
+**Usage of Connext Drive to take IDL file as input and generate typesupport source files**
+
+> rtiddsgen -ppDisable -language <lang> -create typefiles
+
+where <lang> is one of: C, C++, C++11, C#, Java, or other programming languages.
