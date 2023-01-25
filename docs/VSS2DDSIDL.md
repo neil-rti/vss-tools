@@ -76,7 +76,7 @@ $ cd cyclonedds/ \
 **Usage of CycloneDDS to take IDL file as input and generate Python file with types**
 
  ```Shell
-$ idlc **-l py**  ./results/res.idl
+$ idlc -l py  ./results/res.idl
 ```
 
 ### FastDDS
@@ -88,7 +88,7 @@ Follow the instructions mentioned in page : [https://fast-dds.docs.eprosima.com/
 **Usage of FastDDS to take IDL file as input and generate Python file with types**
 
 ```Shell
-$ ./fastddsgen **-replace** ./results/res.idl
+$ ./fastddsgen -replace ./results/res.idl
 ```
 
 ### RTI Connext Drive
