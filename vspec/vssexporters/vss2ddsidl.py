@@ -126,11 +126,13 @@ def collect_node( node, generate_uuid,generate_all_idl_features):
         if node.comment != "":
             idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["comment"] = node.comment
 
+
 def post_process_idl(generate_all_idl_features):
     """
     This method creates common struct types
     """
     global idlGroupedTypes
+    global idlFileBuffer
     finalTypes = {}
 
     # first-level: consolidate into structs.
@@ -138,17 +140,11 @@ def post_process_idl(generate_all_idl_features):
         # loop-thru and create a hash of the name and select member elements
         mh = hashlib.sha1()
         for itemName, itemElements in idlGroupedTypes[modgroup].items():
-            # for each member, include its name..
             mh.update(itemName.encode('utf-8'))
-            # vsstype
             mh.update(itemElements["vsstype"].encode('utf-8'))
-            # datatype
             mh.update(itemElements["datatype"].encode('utf-8'))
-            # allowed (if present)
             if "allowed" in itemElements:
                 mh.update(','.join(itemElements["allowed"]).encode('utf-8'))
-
-            # other elements (if present)
             if "default" in itemElements:
                 mh.update(str(itemElements["default"]).encode('utf-8'))
             if "min" in itemElements:
@@ -157,12 +153,11 @@ def post_process_idl(generate_all_idl_features):
                 mh.update(str(itemElements["max"]).encode('utf-8'))
             if "unit" in itemElements:
                 mh.update(itemElements["unit"].encode('utf-8'))
-            if "comment" in itemElements:
-                mh.update(itemElements["comment"].encode('utf-8'))
             # NOTE: sometimes the description is slightly different on otherwise identical structs.  Omit?
             #if "description" in itemElements:
             #    mh.update(itemElements["description"].encode('utf-8'))
-
+            #if "comment" in itemElements:
+            #    mh.update(itemElements["comment"].encode('utf-8'))
         hashOfElementsAndNames = mh.hexdigest()
 
         # add or update the finalTypes dict
@@ -172,16 +167,16 @@ def post_process_idl(generate_all_idl_features):
         else:
             # create a new record for this struct
             finalTypes[hashOfElementsAndNames] = {}
-            #finalTypes[hashOfElementsAndNames]["name"] = structName
             finalTypes[hashOfElementsAndNames]["paths"] = [modgroup]
             finalTypes[hashOfElementsAndNames]["members"] = idlGroupedTypes[modgroup]
 
-    # Test: print as structs
+    # Convert and export IDL
     for dType in finalTypes:
         structName = ""
         pathList = []       # path to struct
         varList = []        # if multi-paths, this is a list of vars in the path
         pathCount = len(finalTypes[dType]["paths"])
+        # if multiple paths use this struct, separate the common from the variant parts of the path
         if pathCount > 1:
             # find the different parts of these paths
             refPathList = finalTypes[dType]["paths"][0].split(":")
@@ -216,9 +211,59 @@ def post_process_idl(generate_all_idl_features):
                 pathList.append("State")
 
         structName = pathList[-1]
-        print("P: {}, S: {}, V: {}, members: {}".format(":".join(pathList[0:-1]), structName, varList, len(finalTypes[dType]["members"])))
-        print(json.dumps(finalTypes[dType]["members"], indent=2))
 
+        # print the path and struct/members to idlFileBuffer
+        tabidx = 0
+        # module path
+        for mod in pathList[0:-1]:
+            idlFileBuffer.append("{}module {} {{".format("  "*tabidx, mod))
+            tabidx+=1
+
+        # check if this group has an enum; define it here first
+        enumNames = []
+        for member in finalTypes[dType]["members"]:
+            if "allowed" in finalTypes[dType]["members"][member]:
+                enumNames.append(member)
+                # add a prefix to the enum names to make them unique in the namespace (for C language)
+                pathPrefix = []
+                for mod in pathList:
+                    pathCaps = [c for c in mod if c.isupper()]
+                    pathPrefix.extend(pathCaps)
+                pathPrefix.append("_")
+                pathPrefix.extend([c for c in member if c.isupper()])
+                pathPreString = "".join(pathPrefix)
+                tmpEnumElements = finalTypes[dType]["members"][member]["allowed"]
+                for idx, item in enumerate(tmpEnumElements):
+                    tmpEnumElements[idx] = "{}_{}".format(pathPreString, item)
+
+
+                idlFileBuffer.append("{}enum {}_Values {{ {} }};".format("  "*tabidx, member, ",".join(tmpEnumElements)))
+                #idlFileBuffer.append("{}enum {}_Values {{ {} }};".format("  "*tabidx, member, ",".join(finalTypes[dType]["members"][member]["allowed"])))
+                #idlFileBuffer.append("{}enum {}_Values {{".format("  "*tabidx, member))
+                #tabidx+=1
+                #for item in finalTypes[dType]["members"][member]["allowed"]:
+                #    idlFileBuffer.append("{}{},".format("  "*tabidx, item))
+                #tabidx-=1
+                #idlFileBuffer.append("{}}};".format("  "*tabidx))
+ 
+
+        # if this struct has multiple paths, put the variants here as an enum:
+        #if len(varList) > 1:
+
+
+        # struct
+        idlFileBuffer.append("{}struct {} {{".format("  "*tabidx, structName))
+        tabidx+=1            
+        for member in finalTypes[dType]["members"]:
+            if len(enumNames) > 0 and member in enumNames:
+                idlFileBuffer.append("{}{}:{}_Values {};".format("  "*tabidx, ":".join(pathList[0:-1]), member, member))
+            else:
+                idlFileBuffer.append("{}{} {};".format("  "*tabidx, finalTypes[dType]["members"][member]["datatype"], member))
+
+        # closing
+        while tabidx > 0:
+            tabidx-=1
+            idlFileBuffer.append("{}}};".format("  "*tabidx))
 
 
 
@@ -328,16 +373,8 @@ def export_idl(file, root, generate_uuids=True, generate_all_idl_features=False)
     """
     collect_node( root, generate_uuids,generate_all_idl_features)
     post_process_idl(generate_all_idl_features)
-
-    # file.write('\n'.join(idlFileBuffer))
+    file.write('\n'.join(idlFileBuffer))
     print("IDL file generated at location : "+file.name)
-    #print(json.dumps(idlGroupedTypes, indent=2))
-    #for group in idlGroupedTypes:
-    #    print(group)
-    #    print("---------")
-
-
-
 
 def export(config: argparse.Namespace, root: VSSNode, print_uuid):
     print("Generating DDS-IDL output...")
