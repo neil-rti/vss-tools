@@ -2,6 +2,7 @@
 
 #
 # (c) 2022 Robert Bosch GmbH
+# (c) 2023 Real Time Innovations, Inc.
 #
 # All files and artifacts in this repository are licensed under the
 # provisions of the license provided by the LICENSE file in this repository.
@@ -15,6 +16,8 @@ import sys
 import vspec
 import argparse
 import keyword
+import hashlib      # [neil-rti] for de-duplication of struct types
+import json         # [neil-rti] temporary for pretty-printing
 
 from vspec.model.vsstree import VSSNode, VSSType
 
@@ -66,6 +69,160 @@ dataTypesMap_covesa_dds={"uint8": "octet",
               "string": "string"
               }
 
+# build-up the grouped elements into types here
+idlGroupedTypes = {}
+
+# module/namespace path 
+modulePath = []
+
+def collect_node( node, generate_uuid,generate_all_idl_features):
+    """
+    This method will traverse VSS nodes and collect data types into the idlGroupedTypes container
+    """
+    global idlGroupedTypes
+    global modulePath
+    # old:
+    global idlFileBuffer
+    datatype = None
+    unit=None
+    min=None
+    max=None
+    defaultValue=None
+    allowedValues=None
+    arraysize=None
+
+    if node.type == VSSType.BRANCH:
+        modulePath.append(getAllowedName(node.name))
+        for child in node.children:
+            collect_node( child, generate_uuid,generate_all_idl_features)
+        modulePath.pop(-1)
+
+    else:
+        # add a node for this module nesting if needed
+        if str(":".join(modulePath)) not in idlGroupedTypes:
+            idlGroupedTypes[str(":".join(modulePath))] = {}
+
+        # add a node for this member
+        idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)] = {}
+
+        # add the member elements
+        idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["vsstype"] = node.type.value
+        if node.datatype != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["datatype"] = node.datatype.value
+        if node.allowed != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["allowed"] = node.allowed
+        if node.default != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["default"] = node.default
+        if node.min != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["min"] = node.min
+        if node.max != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["max"] = node.max
+        try:
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["unit"] = node.unit.value
+        except AttributeError:
+            pass
+        if node.description != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["description"] = node.description
+        if node.comment != "":
+            idlGroupedTypes[str(":".join(modulePath))][getAllowedName(node.name)]["comment"] = node.comment
+
+def post_process_idl(generate_all_idl_features):
+    """
+    This method creates common struct types
+    """
+    global idlGroupedTypes
+    finalTypes = {}
+
+    # first-level: consolidate into structs.
+    for modgroup in idlGroupedTypes:
+        # loop-thru and create a hash of the name and select member elements
+        mh = hashlib.sha1()
+        for itemName, itemElements in idlGroupedTypes[modgroup].items():
+            # for each member, include its name..
+            mh.update(itemName.encode('utf-8'))
+            # vsstype
+            mh.update(itemElements["vsstype"].encode('utf-8'))
+            # datatype
+            mh.update(itemElements["datatype"].encode('utf-8'))
+            # allowed (if present)
+            if "allowed" in itemElements:
+                mh.update(','.join(itemElements["allowed"]).encode('utf-8'))
+
+            # other elements (if present)
+            if "default" in itemElements:
+                mh.update(str(itemElements["default"]).encode('utf-8'))
+            if "min" in itemElements:
+                mh.update(str(itemElements["min"]).encode('utf-8'))
+            if "max" in itemElements:
+                mh.update(str(itemElements["max"]).encode('utf-8'))
+            if "unit" in itemElements:
+                mh.update(itemElements["unit"].encode('utf-8'))
+            if "comment" in itemElements:
+                mh.update(itemElements["comment"].encode('utf-8'))
+            # NOTE: sometimes the description is slightly different on otherwise identical structs.  Omit?
+            #if "description" in itemElements:
+            #    mh.update(itemElements["description"].encode('utf-8'))
+
+        hashOfElementsAndNames = mh.hexdigest()
+
+        # add or update the finalTypes dict
+        if hashOfElementsAndNames in finalTypes:
+            # this struct is already in place; add this instances module path to it
+            finalTypes[hashOfElementsAndNames]["paths"].append(modgroup)
+        else:
+            # create a new record for this struct
+            finalTypes[hashOfElementsAndNames] = {}
+            #finalTypes[hashOfElementsAndNames]["name"] = structName
+            finalTypes[hashOfElementsAndNames]["paths"] = [modgroup]
+            finalTypes[hashOfElementsAndNames]["members"] = idlGroupedTypes[modgroup]
+
+    # Test: print as structs
+    for dType in finalTypes:
+        structName = ""
+        pathList = []       # path to struct
+        varList = []        # if multi-paths, this is a list of vars in the path
+        pathCount = len(finalTypes[dType]["paths"])
+        if pathCount > 1:
+            # find the different parts of these paths
+            refPathList = finalTypes[dType]["paths"][0].split(":")
+            diffPathIdxList = []
+
+            # compare path[0] to the others in the list to find all the changed parts
+            for i in range(1, pathCount):
+                tmpPathList = finalTypes[dType]["paths"][i].split(":")
+                # compare each item in the path; if same, 
+                for j in range(min(len(tmpPathList), len(refPathList))):
+                    if tmpPathList[j] != refPathList[j] and j not in diffPathIdxList:
+                        diffPathIdxList.append(j)
+            
+            # now make the common path and list of diffs
+            diffPathIdxList.sort()
+            for i in range(pathCount):
+                tmpPathList = finalTypes[dType]["paths"][i].split(":")
+                tmpDiffList = []
+                for idx in diffPathIdxList:
+                    if idx < len(tmpPathList):
+                        tmpDiffList.append(tmpPathList[idx])
+                varList.append(":".join(tmpDiffList))
+            diffPathIdxList.sort(reverse = True)
+            for idx in diffPathIdxList:
+                refPathList.pop(idx)
+            pathList = refPathList
+        
+        else:
+            # single-path structs
+            pathList = finalTypes[dType]["paths"][0].split(":")
+            if len(pathList) == 1:
+                pathList.append("State")
+
+        structName = pathList[-1]
+        print("P: {}, S: {}, V: {}, members: {}".format(":".join(pathList[0:-1]), structName, varList, len(finalTypes[dType]["members"])))
+        print(json.dumps(finalTypes[dType]["members"], indent=2))
+
+
+
+
+
 def export_node( node, generate_uuid,generate_all_idl_features):
     """
     This method is used to traverse VSS node and to create corresponding DDS IDL buffer string
@@ -85,7 +242,7 @@ def export_node( node, generate_uuid,generate_all_idl_features):
         for child in node.children:
             export_node( child, generate_uuid,generate_all_idl_features)
         idlFileBuffer.append("};")
-        idlFileBuffer.append("");
+        idlFileBuffer.append("")
     else:
         isEnumCreated=False
         #check if there is a need to create enum (based on the usage of allowed values)
@@ -106,8 +263,8 @@ def export_node( node, generate_uuid,generate_all_idl_features):
 
         idlFileBuffer.append("struct "+getAllowedName(node.name))
         idlFileBuffer.append("{")
-        if generate_uuid:
-            idlFileBuffer.append("string uuid;")
+        #if generate_uuid:
+        #    idlFileBuffer.append("string uuid;")
         #fetching value of datatype and obtaining the equivalent DDS type
         try:
             if str(node.datatype.value) in dataTypesMap_covesa_dds:
@@ -157,14 +314,11 @@ def export_node( node, generate_uuid,generate_all_idl_features):
                     idlFileBuffer.append(getAllowedName(node.name)+"_M::"+getAllowedName(node.name)+"Values value"+ (" "+str(defaultValue) if generate_all_idl_features else "")+";")
 
 
-        if unit!=None:
-            idlFileBuffer.append(("" if generate_all_idl_features else "//")+"const string unit=\""+unit +"\";")
+        #if unit!=None:
+        #    idlFileBuffer.append(("" if generate_all_idl_features else "//")+"const string unit=\""+unit +"\";")
 
-
-
-        idlFileBuffer.append(("" if generate_all_idl_features else "//")+"const string type =\""+  str(node.type.value)+"\";")
-
-        idlFileBuffer.append(("" if generate_all_idl_features else "//")+"const string description=\""+  node.description+"\";")
+        #idlFileBuffer.append(("" if generate_all_idl_features else "//")+"const string type =\""+  str(node.type.value)+"\";")
+        #idlFileBuffer.append(("" if generate_all_idl_features else "//")+"const string description=\""+  node.description+"\";")
         idlFileBuffer.append("};")
 
 
@@ -172,9 +326,16 @@ def export_idl(file, root, generate_uuids=True, generate_all_idl_features=False)
     """This method is used to traverse through the root VSS node to build
        -> DDS IDL equivalent string buffer and to serialize it acccordingly into a file
     """
-    export_node( root, generate_uuids,generate_all_idl_features)
-    file.write('\n'.join(idlFileBuffer))
+    collect_node( root, generate_uuids,generate_all_idl_features)
+    post_process_idl(generate_all_idl_features)
+
+    # file.write('\n'.join(idlFileBuffer))
     print("IDL file generated at location : "+file.name)
+    #print(json.dumps(idlGroupedTypes, indent=2))
+    #for group in idlGroupedTypes:
+    #    print(group)
+    #    print("---------")
+
 
 
 
