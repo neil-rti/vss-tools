@@ -185,10 +185,14 @@ def post_process_idl(generate_all_idl_features):
             # compare path[0] to the others in the list to find all the changed parts
             for i in range(1, pathCount):
                 tmpPathList = finalTypes[dType]["paths"][i].split(":")
-                # compare each item in the path; if same, 
                 for j in range(min(len(tmpPathList), len(refPathList))):
                     if tmpPathList[j] != refPathList[j] and j not in diffPathIdxList:
                         diffPathIdxList.append(j)
+                if len(tmpPathList) != len(refPathList):
+                    # add the trailing idx's of the longer list if not already in there.
+                    for t in range(min(len(tmpPathList), len(refPathList)), max(len(tmpPathList), len(refPathList))):
+                        if t not in diffPathIdxList:
+                            diffPathIdxList.append(t)
             
             # now make the common path and list of diffs
             diffPathIdxList.sort()
@@ -199,8 +203,9 @@ def post_process_idl(generate_all_idl_features):
                     if idx < len(tmpPathList):
                         tmpDiffList.append(tmpPathList[idx])
                 varList.append(":".join(tmpDiffList))
-            diffPathIdxList.sort(reverse = True)
-            for idx in diffPathIdxList:
+            refPathIdxList = [x for x in diffPathIdxList if x < len(refPathList)]
+            refPathIdxList.sort(reverse = True)
+            for idx in refPathIdxList:
                 refPathList.pop(idx)
             pathList = refPathList
         
@@ -235,25 +240,15 @@ def post_process_idl(generate_all_idl_features):
                 tmpEnumElements = finalTypes[dType]["members"][member]["allowed"]
                 for idx, item in enumerate(tmpEnumElements):
                     tmpEnumElements[idx] = "{}_{}".format(pathPreString, item)
-
-
                 idlFileBuffer.append("{}enum {}_Values {{ {} }};".format("  "*tabidx, member, ",".join(tmpEnumElements)))
-                #idlFileBuffer.append("{}enum {}_Values {{ {} }};".format("  "*tabidx, member, ",".join(finalTypes[dType]["members"][member]["allowed"])))
-                #idlFileBuffer.append("{}enum {}_Values {{".format("  "*tabidx, member))
-                #tabidx+=1
-                #for item in finalTypes[dType]["members"][member]["allowed"]:
-                #    idlFileBuffer.append("{}{},".format("  "*tabidx, item))
-                #tabidx-=1
-                #idlFileBuffer.append("{}}};".format("  "*tabidx))
  
-
-        # if this struct has multiple paths, put the variants here as an enum:
-        #if len(varList) > 1:
-
-
         # struct
         idlFileBuffer.append("{}struct {} {{".format("  "*tabidx, structName))
-        tabidx+=1            
+        tabidx+=1
+        # if there are multiple paths using this type, add a 'string instance' var, with its list as a comment
+        if len(varList) > 1:
+            idlFileBuffer.append("{}string instance; // values: {}".format("  "*tabidx, ", ".join(varList)))
+
         for member in finalTypes[dType]["members"]:
             if len(enumNames) > 0 and member in enumNames:
                 idlFileBuffer.append("{}{}:{}_Values {};".format("  "*tabidx, ":".join(pathList[0:-1]), member, member))
